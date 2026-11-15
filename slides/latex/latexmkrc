@@ -1,0 +1,4 @@
+# latexmk desde esta carpeta: los PDF van a figures/slides y lo intermedio a build/.
+$pdf_mode = 1;
+$out_dir = '../../figures/slides';
+$aux_dir = 'build';

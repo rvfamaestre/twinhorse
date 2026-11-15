@@ -1,0 +1,17 @@
+{
+  "notas": "Montaje motor L5 Valladolid. Lo que solo sabe la planta; todo lo demás se deduce de los datos. Objetivos de la presentación del reto. off_flow: manipuladores al final de la configuración, varios sin contador de piezas (hipótesis, confirmar con planta). Los grupos en paralelo se detectan solos (sale ST2376+ST-2375). subassemblies: los bloques ST_0820-ST-0850 y ST_3100-ST_3300 van detrás de ST_2410 en la configuración; solo agrupan los informes de tipo de parada. tramos: sin tramos confirmados, una sola cadena por Orden_OP. Si esos bloques se unen a la línea en otro punto está por confirmar con planta, así que en la lógica solo entran como hipótesis en la prueba de robustez (hipotesis_tramos).",
+  "dp_target": 90,
+  "tcy_target": 80,
+  "off_flow": ["ManBM1_1", "Ma_BM1_2", "ManBM2_1", "Ma_BM2_2", "Ma_VES_0", "Ma_VESRE", "MANOP749"],
+  "subassemblies": ["ST_0820", "ST-0830", "ST-0840", "ST-0850", "ST_3100", "ST3100_2", "ST_3300"],
+  "tramos": {},
+  "hipotesis_tramos": {
+    "bloques 08xx y 3xxx aparte": {
+      "bloque_0800": ["ST_0820", "ST-0830", "ST-0840", "ST-0850"],
+      "bloque_3000": ["ST_3100", "ST3100_2", "ST_3300"]
+    },
+    "solo bloque 08xx aparte": {
+      "bloque_0800": ["ST_0820", "ST-0830", "ST-0840", "ST-0850"]
+    }
+  }
+}

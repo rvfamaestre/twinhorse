@@ -1,0 +1,18 @@
+/* Lo mismo que el dashboard: blanco, tinta casi negra, un gris y color solo para los estados. */
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
+svg { display: block; }
+text {
+  font-family: "Inter", system-ui, sans-serif;
+  font-feature-settings: "tnum", "cv11", "calt";
+  letter-spacing: -0.01em;
+}
+text:not([fill]) { fill: #0d0d0d; } /* el atributo fill de cada texto manda */
+text.caps { font-size: 22px; font-weight: 600; letter-spacing: 0.12em; fill: #8a8a8a; }
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: 0; }
+.name { font-feature-settings: "cv11", "calt"; } /* sin cifras tabulares: el guion de ST-0260 no se ensancha */

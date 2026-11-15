@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>05 · Predecir lo normal</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg id="s" viewBox="0 0 1920 1080" width="1920" height="1080"><rect width="1920" height="1080" fill="#fff"/><g id="cam"></g></svg>
+<script type="module">
+// TimesFM predice la semana de prueba de golpe a partir de 11 días: la banda p10–p90 es lo normal.
+// Los días reales caen dentro salvo uno, que sale como aviso. Datos: forecast/output/<línea>/backtest_predicciones.csv
+import { C, el, attrs, reveal, tween, ease, prog, lerp, num, drift, fonts, loadData, mount } from "./lib.js";
+
+const D = 15;
+const data = await loadData();
+await fonts();
+const fc = data.forecast;
+const cam = document.getElementById("cam");
+
+const X0 = 300, X1 = 1640, YB = 800, PX_H = 150, YMAX = 3;
+const n = fc.history.length + fc.test.length;
+const xs = (i) => X0 + (i * (X1 - X0)) / (n - 1);
+const ys = (v) => YB - v * PX_H;
+const T = { title: 0.2, axes: 0.4, hist: 0.8, band: 3.0, test: 5.0, step: 0.8, foot: 9.6 };
+const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+// Título y ejes
+const title = el("g", {}, cam);
+el("text", { x: X0, y: 168, "font-size": 46, "font-weight": 600, class: "name", text: `${fc.op} · parada propia` }, title);
+el("text", { x: X0, y: 214, "font-size": 25, "font-weight": 500, fill: C.muted, class: "name", text: `horas al día · TimesFM 3.0 · ${fc.history.length} días de contexto, ${fc.test.length} de horizonte` }, title);
+
+const axes = el("g", {}, cam);
+for (let v = 0; v <= YMAX; v++) {
+  el("line", { x1: X0, x2: X1, y1: ys(v), y2: ys(v), stroke: v ? C.line : C.line2, "stroke-width": v ? 1.5 : 2 }, axes);
+  el("text", { x: X0 - 22, y: ys(v) + 8, "text-anchor": "end", "font-size": 22, "font-weight": 500, fill: C.faint, text: `${v} h` }, axes);
+}
+const days = [...fc.history.map((d) => d.day), ...fc.test.map((d) => d.day)];
+days.forEach((d, i) => el("text", { x: xs(i), y: YB + 42, "text-anchor": "middle", "font-size": 19, "font-weight": 500, fill: C.faint, text: ddmm(d) }, axes));
+
+// Historia
+const hist = fc.history.map((d, i) => [xs(i), ys(d.v)]);
+const histLine = el("path", { d: "M " + hist.map((p) => p.join(" ")).join(" L "), fill: "none", stroke: C.ink, "stroke-width": 3, "stroke-linejoin": "round" }, cam);
+const histLen = histLine.getTotalLength();
+attrs(histLine, { "stroke-dasharray": `${histLen} ${histLen}` });
+const histDots = hist.map(([x, y]) => el("circle", { cx: x, cy: y, r: 6, fill: C.ink }, cam));
+const segLen = hist.map((_, i) => (i === 0 ? 0 : Math.hypot(hist[i][0] - hist[i - 1][0], hist[i][1] - hist[i - 1][1])));
+const cumLen = segLen.map((_, i) => segLen.slice(0, i + 1).reduce((a, b) => a + b, 0));
+
+// Separación historia / predicción
+const split = (xs(fc.history.length - 1) + xs(fc.history.length)) / 2;
+const divider = el("g", {}, cam);
+el("line", { x1: split, x2: split, y1: ys(YMAX) - 30, y2: YB, stroke: C.line2, "stroke-width": 2, "stroke-dasharray": "6 6" }, divider);
+el("text", { x: split - 16, y: ys(YMAX) - 8, "text-anchor": "end", "font-size": 21, "font-weight": 500, fill: C.muted, text: "historia" }, divider);
+el("text", { x: split + 16, y: ys(YMAX) - 8, "font-size": 21, "font-weight": 500, fill: C.muted, text: "predicción" }, divider);
+
+// Banda: deciles en degradado, sin mediana (como en el dashboard), saliendo del último dato
+const last = hist[hist.length - 1];
+const bandG = el("g", {}, cam);
+const clip = el("clipPath", { id: "bandclip" }, cam);
+const clipRect = el("rect", { x: last[0], y: 0, height: 1080, width: 0 }, clip);
+bandG.setAttribute("clip-path", "url(#bandclip)");
+for (let k = 0; k < 4; k++) {
+  const up = fc.test.map((d, i) => [xs(fc.history.length + i), ys(d.q[8 - k])]);
+  const lo = fc.test.map((d, i) => [xs(fc.history.length + i), ys(d.q[k])]).reverse();
+  const pts = [last, ...up, ...lo];
+  el("path", { d: "M " + pts.map((p) => p.map((v) => v.toFixed(1)).join(" ")).join(" L ") + " Z", fill: C.ink, "fill-opacity": 0.075 }, bandG);
+}
+const legend = el("g", {}, cam);
+el("rect", { x: X0, y: 896, width: 30, height: 16, rx: 3, fill: C.ink, "fill-opacity": 0.2 }, legend);
+el("text", { x: X0 + 44, y: 911, "font-size": 23, "font-weight": 500, fill: C.ink2, text: "lo normal: banda p10–p90" }, legend);
+const legDot = el("g", {}, cam);
+el("circle", { cx: X0 + 420, cy: 904, r: 7, fill: C.ink }, legDot);
+el("text", { x: X0 + 438, y: 911, "font-size": 23, "font-weight": 500, fill: C.ink2, text: "real" }, legDot);
+
+// Semana de prueba: los días reales caen uno a uno
+const realLine = el("path", { fill: "none", stroke: C.ink, "stroke-width": 2, "stroke-opacity": 0.35 }, cam);
+const tests = fc.test.map((d, i) => {
+  const x = xs(fc.history.length + i), y = ys(d.real);
+  const out = d.real - d.q[8] >= 0.3; // la misma regla que los avisos del dashboard
+  const g = el("g", {}, cam);
+  const pulse = el("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: C.own, "stroke-width": 2.5 }, g);
+  const dot = el("circle", { cx: x, cy: y, r: out ? 9 : 6.5, fill: out ? C.own : C.ink }, g);
+  let badge = null;
+  if (out) {
+    badge = el("g", {}, g);
+    el("circle", { cx: x + 46, cy: y - 2, r: 17, fill: C.own }, badge);
+    el("text", { x: x + 46, y: y + 7, "text-anchor": "middle", "font-size": 24, "font-weight": 700, fill: "#ffffff", text: "!" }, badge);
+    el("text", { x: x + 76, y: y + 6, "font-size": 26, "font-weight": 600, fill: C.own, text: `${num(d.real, 1)} h: fuera de lo normal` }, badge);
+  }
+  return { x, y, out, g, dot, pulse, badge };
+});
+
+const foot = el("text", { x: X1, y: 911, "text-anchor": "end", "font-size": 23, "font-weight": 500, fill: C.muted, text: "78 % de los días reales cae dentro de la banda · lo ideal es el 80 %" }, cam);
+
+function render(t) {
+  drift(cam, t, D, 0.02);
+  reveal(title, t, T.title);
+  reveal(axes, t, T.axes, { dy: 0, blur: 0 });
+
+  const ph = tween(t, T.hist, 2.0, ease.inOutCubic);
+  attrs(histLine, { "stroke-dashoffset": (histLen * (1 - ph)).toFixed(2) });
+  histDots.forEach((d, i) => {
+    const k = tween(t, T.hist + 2.0 * (cumLen[i] / histLen) * 0.9, 0.35, ease.outBack);
+    attrs(d, { r: (6 * k).toFixed(2) });
+  });
+
+  reveal(divider, t, T.band - 0.2, { dy: 0 });
+  attrs(clipRect, { width: ((X1 - last[0] + 4) * tween(t, T.band, 1.6, ease.inOutCubic)).toFixed(2) });
+  reveal(legend, t, T.band + 1.2, { dy: 8 });
+  reveal(legDot, t, T.test, { dy: 8 });
+
+  let path = `M ${last[0]} ${last[1]}`;
+  tests.forEach((p, i) => {
+    const t0 = T.test + i * T.step;
+    const k = tween(t, t0, 0.55, ease.outCubic);
+    p.g.style.opacity = k.toFixed(3);
+    p.g.setAttribute("transform", `translate(0 ${(-36 * (1 - k)).toFixed(2)})`);
+    if (k > 0) path += ` L ${p.x} ${lerp(p.y - 36, p.y, k).toFixed(2)}`;
+    // El que se sale: late dos veces y saca el aviso
+    if (p.out) {
+      const pp = ((t - t0 - 0.4) % 1.1) / 1.1;
+      const on = t > t0 + 0.4 && t < t0 + 0.4 + 2.2;
+      attrs(p.pulse, { r: (9 + 30 * pp).toFixed(2), "stroke-opacity": on ? (1 - pp).toFixed(3) : 0 });
+      reveal(p.badge, t, t0 + 0.5, { dy: 0 });
+    } else p.pulse.setAttribute("stroke-opacity", 0);
+  });
+  attrs(realLine, { d: path });
+  realLine.style.opacity = t > T.test ? 1 : 0;
+
+  reveal(foot, t, T.foot, { dy: 8 });
+}
+
+mount(render, D);
+</script>
+</body>
+</html>

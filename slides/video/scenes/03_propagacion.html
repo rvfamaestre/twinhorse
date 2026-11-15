@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>03 · Cómo se propaga una parada</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg id="s" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <marker id="headB" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3e8bf0"/></marker>
+    <marker id="headA" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f0a530"/></marker>
+  </defs>
+  <rect width="1920" height="1080" fill="#fff"/><g id="cam"></g>
+</svg>
+<script type="module">
+// Una parada propia en ST-0260: la cola llena a las de antes (bloqueadas) y vacía a las de después
+// (sin piezas). Luego la regla de las flechas y el índice de penalización con las horas reales de 16 días.
+import { C, el, attrs, reveal, tween, ease, prog, lerp, num, mix, drift, fonts, loadData, mount } from "./lib.js";
+
+const D = 25;
+const data = await loadData();
+await fonts();
+const cam = document.getElementById("cam");
+const nb = data.neighbourhood; // cinco estaciones seguidas, ST-0260 en el centro
+const FOCUS = 2;
+
+const Y = 440, BOX_W = 160, BOX_H = 116, PITCH = 310;
+const SX = nb.map((_, k) => 960 + (k - FOCUS) * PITCH);
+const T = { intro: 0.2, stop: 4.0, hours: 8.4, rule: 11.2, ring: 13.4, index: 15.6 };
+
+// Simulación de la cinta: palés a velocidad fija que no se adelantan; ST-0260 deja de soltar en T.stop
+const V = 230, SPACING = 70, GAP = 38, DT = 1 / 240, X_IN = -20, X_OUT = 1940;
+const STATES = { work: ["trabajando", C.work], own: ["parada", C.own], blocked: ["bloqueada", C.blocked], starved: ["sin piezas", C.starved] };
+
+function simulate(tEnd) {
+  let pallets = [];
+  for (let x = 1900; x >= X_IN; x -= SPACING) pallets.push({ x, v: V });
+  const state = SX.map(() => ({ cur: "work", since: -1, prev: "work", cand: "work", candSince: 0 }));
+  for (let t = 0; t < tEnd; t += DT) {
+    const stopped = t >= T.stop;
+    for (let i = 0; i < pallets.length; i++) {
+      const p = pallets[i];
+      let nx = p.x + V * DT;
+      if (stopped && p.x <= SX[FOCUS] && nx > SX[FOCUS]) nx = SX[FOCUS];
+      if (i > 0) nx = Math.min(nx, pallets[i - 1].x - GAP);
+      nx = Math.max(nx, p.x);
+      p.v = (nx - p.x) / DT;
+      p.x = nx;
+    }
+    pallets = pallets.filter((p) => p.x < X_OUT);
+    const back = pallets[pallets.length - 1];
+    if (!back || back.x - SPACING >= X_IN) pallets.push({ x: back ? back.x - SPACING : X_IN, v: V });
+    // Estado de cada estación con lo que tiene dentro
+    SX.forEach((sx, k) => {
+      let raw;
+      if (k === FOCUS) raw = stopped ? "own" : "work";
+      else {
+        const inside = pallets.filter((p) => Math.abs(p.x - sx) < BOX_W / 2);
+        raw = !inside.length ? "starved" : inside.some((p) => p.v < 20) ? "blocked" : "work";
+      }
+      const s = state[k];
+      if (raw !== s.cand) { s.cand = raw; s.candSince = t; }
+      if (s.cand !== s.cur && t - s.candSince > 0.12) { s.prev = s.cur; s.cur = s.cand; s.since = t; }
+    });
+  }
+  return { pallets, state };
+}
+
+// Cinta
+const rails = el("g", {}, cam);
+el("line", { x1: 0, y1: Y - 19, x2: 1920, y2: Y - 19, stroke: C.line2, "stroke-width": 2 }, rails);
+el("line", { x1: 0, y1: Y + 19, x2: 1920, y2: Y + 19, stroke: C.line2, "stroke-width": 2 }, rails);
+const railClip = el("clipPath", { id: "railclip" }, cam);
+const railRect = el("rect", { x: 0, y: Y - 30, height: 60, width: 0 }, railClip);
+rails.setAttribute("clip-path", "url(#railclip)");
+
+// Estaciones
+const st = nb.map((s, k) => {
+  const g = el("g", {}, cam);
+  const inner = el("g", {}, g);
+  const x = SX[k];
+  el("line", { x1: x, y1: Y - BOX_H / 2, x2: x, y2: Y - BOX_H / 2 - 18, stroke: C.ink2, "stroke-width": 3 }, inner);
+  const beacon = el("circle", { cx: x, cy: Y - BOX_H / 2 - 24, r: 8 }, inner);
+  const box = el("rect", { x: x - BOX_W / 2, y: Y - BOX_H / 2, width: BOX_W, height: BOX_H, rx: 16, "stroke-width": 2.5, "fill-opacity": 0.9 }, inner);
+  const name = el("text", { x, y: Y + BOX_H / 2 + 50, "text-anchor": "middle", "font-size": 28, "font-weight": 600, class: "name", text: s.op }, inner);
+  const label = el("text", { x, y: Y + BOX_H / 2 + 86, "text-anchor": "middle", "font-size": 23, "font-weight": 500 }, inner);
+  const hours = el("g", {}, g);
+  const hoursText = el("text", { x, y: Y + BOX_H / 2 + 146, "text-anchor": "middle", "font-size": 46, "font-weight": 600 }, hours);
+  return { g, inner, box, beacon, name, label, hours, hoursText };
+});
+// Horas reales de 16 días que cuenta cada una
+const H = { 1: ["sat", C.blocked], 2: ["tap", C.own], 3: ["des", C.starved] };
+
+// Palés por encima de las cajas
+const palletLayer = el("g", {}, cam);
+const pool = Array.from({ length: 60 }, () => el("rect", { width: 24, height: 24, rx: 5, fill: C.ink2, y: Y - 12 }, palletLayer));
+
+// Regla de las flechas
+const arcs = [
+  { from: SX[1] + 34, to: SX[2] - 34, color: C.blocked, head: "headB", text: "SAT(i−1) > DES(i)" },
+  { from: SX[3] - 34, to: SX[2] + 34, color: C.starved, head: "headA", text: "DES(i+1) > SAT(i)" },
+].map((a) => {
+  const g = el("g", {}, cam);
+  const y0 = Y - BOX_H / 2 - 36, cx = (a.from + a.to) / 2;
+  const path = el("path", { d: `M ${a.from} ${y0} Q ${cx} ${y0 - 130} ${a.to} ${y0}`, fill: "none", stroke: a.color, "stroke-width": 3.5, "stroke-linecap": "round", "marker-end": `url(#${a.head})` }, g);
+  const len = path.getTotalLength();
+  attrs(path, { "stroke-dasharray": `${len} ${len}` });
+  const label = el("text", { x: cx, y: y0 - 82, "text-anchor": "middle", "font-size": 24, "font-weight": 600, fill: a.color, class: "name", text: a.text }, g);
+  return { ...a, g, path, len, label };
+});
+const ringG = el("g", {}, cam);
+const ring = el("rect", { x: SX[2] - BOX_W / 2 - 14, y: Y - BOX_H / 2 - 14, width: BOX_W + 28, height: BOX_H + 28, rx: 26, fill: "none", stroke: C.ink, "stroke-width": 3 }, ringG);
+const ringLen = 2 * (BOX_W + 28 + BOX_H + 28);
+attrs(ring, { "stroke-dasharray": `${ringLen} ${ringLen}` });
+const brake = el("g", {}, cam);
+el("text", { x: 960, y: 176, "text-anchor": "middle", "font-size": 34, "font-weight": 700, fill: C.ink, text: "frena la línea" }, brake);
+el("text", { x: 960, y: 214, "text-anchor": "middle", "font-size": 24, "font-weight": 500, fill: C.muted, text: "16 de 16 días" }, brake);
+
+// Índice de penalización
+const f = nb[FOCUS], prev = nb[FOCUS - 1], next = nb[FOCUS + 1];
+const segs = [
+  { h: f.tap, color: C.own },
+  { h: prev.sat, color: C.blocked },
+  { h: next.des, color: C.starved },
+];
+const totalH = segs.reduce((a, s) => a + s.h, 0);
+const BX = 460, BW = 1000, BY = 800, BH = 40, scale = BW / totalH;
+const idx = el("g", {}, cam);
+el("text", { x: BX, y: BY - 34, class: "caps name", text: `ÍNDICE DE PENALIZACIÓN DE ${f.op} · 16 DÍAS` }, idx);
+segs.forEach((s) => {
+  s.rect = el("rect", { y: BY, height: BH, rx: 4, fill: s.color }, idx);
+  s.label = el("text", { y: BY + BH + 38, "text-anchor": "middle", "font-size": 24, "font-weight": 600, fill: s.color }, idx);
+});
+const totalText = el("text", { y: BY + BH / 2 + 19, "font-size": 54, "font-weight": 700, fill: C.ink }, idx);
+const formula = el("text", { x: BX + BW, y: BY - 34, "text-anchor": "end", "font-size": 24, "font-weight": 500, fill: C.muted, class: "name", text: "TAP(i) + SAT(i−1) + DES(i+1)" }, idx);
+
+const fadeX = (x) => clamp01((x - 30) / 110) * clamp01((1890 - x) / 110);
+function clamp01(v) { return Math.min(1, Math.max(0, v)); }
+
+function render(t) {
+  drift(cam, t, D, 0.02);
+  const sim = simulate(t);
+
+  attrs(railRect, { width: (1920 * tween(t, 0, 1.6, ease.inOutCubic)).toFixed(1) });
+  const palletIn = tween(t, 0.6, 0.8, ease.outCubic);
+  pool.forEach((r, i) => {
+    const p = sim.pallets[i];
+    if (!p) return r.setAttribute("opacity", 0);
+    attrs(r, { x: (p.x - 12).toFixed(2), opacity: (palletIn * fadeX(p.x)).toFixed(3) });
+  });
+
+  const dimOuter = tween(t, T.hours, 0.8, ease.inOutCubic);
+  st.forEach((s, k) => {
+    reveal(s.inner, t, T.intro + Math.abs(k - FOCUS) * 0.12, { dy: 14 });
+    const ss = sim.state[k];
+    const kk = ss.since < 0 ? 1 : tween(t, ss.since, 0.35, ease.outCubic);
+    const color = mix(STATES[ss.prev][1], STATES[ss.cur][1], kk);
+    const working = ss.cur === "work" ? 1 - kk * 0 : 0;
+    const tint = ss.cur === "work" ? lerp(0.1, 0, kk) : lerp(ss.prev === "work" ? 0 : 0.1, 0.1, kk);
+    attrs(s.beacon, { fill: color });
+    attrs(s.box, { fill: mix("#ffffff", color, tint), stroke: ss.cur === "work" && kk >= 1 ? C.ink2 : mix(C.ink2, color, ss.cur === "work" ? 1 - kk : kk) });
+    attrs(s.label, { fill: color });
+    s.label.textContent = STATES[ss.cur][0];
+    const outer = k === 0 || k === nb.length - 1;
+    s.g.style.opacity = outer ? (1 - 0.7 * dimOuter).toFixed(3) : 1;
+    if (H[k]) {
+      const [key, c] = H[k];
+      const p = reveal(s.hours, t, T.hours + 0.2 + Math.abs(k - FOCUS) * 0.15, { dy: 12 });
+      attrs(s.hoursText, { fill: c });
+      s.hoursText.textContent = `${num(nb[k][key] * tween(t, T.hours + 0.2, 1.4, ease.outCubic))} h`;
+    } else s.hours.style.opacity = 0;
+  });
+
+  arcs.forEach((a, i) => {
+    const t0 = T.rule + i * 0.6;
+    const p = tween(t, t0, 1.0, ease.inOutCubic);
+    attrs(a.path, { "stroke-dashoffset": (a.len * (1 - p)).toFixed(2), "marker-end": p > 0.97 ? `url(#${a.head})` : "none" });
+    a.path.style.opacity = p > 0 ? 1 : 0;
+    reveal(a.label, t, t0 + 0.5, { dy: 10 });
+  });
+  const pr = tween(t, T.ring, 0.9, ease.inOutCubic);
+  attrs(ring, { "stroke-dashoffset": (ringLen * (1 - pr)).toFixed(2) });
+  ring.style.opacity = pr > 0 ? 1 : 0;
+  reveal(brake, t, T.ring + 0.4);
+
+  reveal(idx, t, T.index, { dy: 14 });
+  let x = BX, sum = 0;
+  segs.forEach((s, i) => {
+    const g = tween(t, T.index + 0.4 + i * 0.55, 1.0, ease.outExpo);
+    const w = s.h * scale * g;
+    attrs(s.rect, { x: x.toFixed(2), width: Math.max(0, w).toFixed(2) });
+    attrs(s.label, { x: (x + w / 2).toFixed(2) });
+    s.label.textContent = `${num(s.h)} h`;
+    s.label.style.opacity = tween(t, T.index + 0.8 + i * 0.55, 0.5, ease.outCubic);
+    x += w + (g > 0.01 ? 4 : 0);
+    sum += s.h * g;
+  });
+  attrs(totalText, { x: (x + 22).toFixed(2) });
+  totalText.textContent = `${num(sum)} h`;
+}
+
+mount(render, D);
+</script>
+</body>
+</html>

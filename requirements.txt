@@ -1,0 +1,12 @@
+# Núcleo (limpieza, KPIs, lógica de paradas, figuras y tests)
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+pyarrow>=15
+pytest>=8
+# Predicción (opcional: forecast/run_forecast.py y forecast/benchmark.py). CPU basta; pesos ~1,3 GB.
+timesfm[torch]>=3.0.2
+# API del dashboard (python -m backend.api): sirve la línea y predice al momento
+fastapi>=0.115
+uvicorn>=0.30
+httpx>=0.27

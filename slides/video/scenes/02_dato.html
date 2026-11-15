@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>02 · Fiarse del dato</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg id="s" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="4" height="4" fill="#e3e4e7"/><rect width="2" height="4" fill="#8b8d98"/>
+    </pattern>
+  </defs>
+  <rect width="1920" height="1080" fill="#fff"/><g id="cam"></g>
+</svg>
+<script type="module">
+// Las 1.820 filas (91 operaciones × 20 días) en una rejilla y la limpieza por niveles: días sin
+// producción, manipuladores y estaciones sin dato fiable. Cada nivel quita sus filas de la rejilla y
+// baja la barra de abajo. Al final, lo que se queda y se corrige: horas reescaladas y contador de la línea.
+// Datos: data/processed/VLL_MONTAJE_L5/clean.csv (los flags de backend/pipeline/clean.py).
+import { C, el, attrs, reveal, tween, ease, prog, lerp, num, mix, drift, fonts, loadData, mount } from "./lib.js";
+
+const D = 15;
+const data = await loadData();
+await fonts();
+const q = data.quality;
+const cam = document.getElementById("cam");
+
+const P = 15, S = 10; // paso y lado de cada celda
+const NC = q.ops.length, NR = q.days.length;
+const GW = NC * P - (P - S);
+const X0 = Math.round((1920 - GW) / 2), Y0 = 130;
+const T = { count: 0.4, cells: 0.3, dia: 2.6, man: 5.2, nofiable: 7.9, fixed: 11.3 };
+const MARK = C.ink2;
+const GONE = "#c8c8c8"; // lo que sale en cada nivel
+const KEPT = "#11646a"; // lo que entra en el ranking
+
+// Rejilla
+const cells = [];
+const grid = el("g", {}, cam);
+q.grid.forEach((row, r) =>
+  row.forEach((cat, c) => {
+    const e = el("rect", { width: S, height: S, rx: 2.5 }, grid);
+    cells.push({ e, r, c, cat, delay: T.cells + c * 0.011 + r * 0.03 });
+  }),
+);
+const rowsOf = (cat) => new Set(q.grid.map((row, r) => (row.every((x) => x === cat) ? r : -1)).filter((r) => r >= 0));
+const colsOf = (cat) => new Set(q.ops.map((_, c) => (q.grid.some((row) => row[c] === cat) ? c : -1)).filter((c) => c >= 0));
+const diaRows = rowsOf("dia");
+const manCols = colsOf("man");
+const badCols = colsOf("nofiable");
+const man0 = Math.min(...manCols);
+
+// Niveles, debajo: cada barra mide lo que dejó el nivel anterior y se queda con lo que sobrevive
+const lv = Object.fromEntries(q.levels.map((l) => [l.key, l]));
+const list = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} y ${xs.at(-1)}` : xs[0]);
+const N0 = NC * NR;
+const levels = [
+  { t: T.count, title: "Datos de partida", sub: `${NC} operaciones × ${NR} días`, rows: 0 },
+  { t: T.dia, title: `${lv.dia.count} días sin producción`, sub: `${num(lv.dia.rows)} filas con ${num(q.stop_h)} h de parada y 0 piezas`, rows: lv.dia.rows },
+  { t: T.man, title: `${lv.man.count} manipuladores`, sub: `${num(lv.man.rows)} filas fuera del flujo principal`, rows: lv.man.rows },
+  { t: T.nofiable, title: `${lv.nofiable.count} estaciones sin dato fiable`, sub: `${num(lv.nofiable.rows)} filas: ${list(lv.nofiable.ops)}`, rows: lv.nofiable.rows, names: true },
+];
+let before = N0;
+levels.forEach((l) => {
+  l.from = before;
+  l.to = before - l.rows;
+  before = l.to;
+});
+console.assert(before === q.kept, "los niveles no llegan a las filas del ranking");
+
+const FY = 490, RH = 110; // primera línea y alto de cada nivel
+const BX = X0 + 560, BW = 620, BH = 34;
+const scale = BW / N0;
+levels.forEach((l, k) => {
+  const y = FY + k * RH;
+  const g = el("g", {}, cam);
+  el("line", { x1: X0, x2: X0 + GW, y1: y, y2: y, stroke: C.line, "stroke-width": 1.5 }, g);
+  el("text", { x: X0, y: y + 48, "font-size": 30, "font-weight": 600, fill: C.ink, text: l.title }, g);
+  el("text", { x: X0, y: y + 84, "font-size": 24, "font-weight": 500, fill: C.muted, text: l.sub, class: l.names ? "name" : "" }, g);
+  if (l.rows) el("rect", { x: BX, y: y + 38, width: (l.from * scale).toFixed(2), height: BH, rx: 2, fill: GONE }, g);
+  l.bar = el("rect", { x: BX, y: y + 38, height: BH, rx: 2 }, g);
+  l.num = el("text", { x: X0 + GW, y: y + 71, "font-size": 46, "font-weight": 600, "text-anchor": "end" }, g);
+  l.g = g;
+});
+
+// Lo que se queda, corregido: leyenda bajo la rejilla ya limpia
+const LY = Y0 + (NR - diaRows.size) * P - (P - S) + 52;
+const legend = el("g", {}, cam);
+el("rect", { x: X0, y: LY - 18, width: 18, height: 18, rx: 3.5, fill: MARK }, legend);
+const tA = el("text", { x: X0 + 30, y: LY, "font-size": 24, "font-weight": 500, fill: C.muted, text: `${num(q.fixed.reloj)} filas reescaladas a ${num(q.stop_h)} h` }, legend);
+const xB = X0 + 30 + tA.getComputedTextLength() + 56;
+el("circle", { cx: xB + 9, cy: LY - 9, r: 8, fill: "#fff", stroke: MARK, "stroke-width": 2 }, legend);
+el("text", { x: xB + 30, y: LY, "font-size": 24, "font-weight": 500, fill: C.muted, text: `${num(q.fixed.contador)} filas con el contador de la línea` }, legend);
+
+function render(t) {
+  drift(cam, t, D, 0.02);
+
+  // Cuánto se ha cerrado cada nivel en la rejilla
+  const close = (t0) => tween(t, t0 + 1.2, 0.9, ease.inOutCubic);
+  const kDia = close(T.dia), kMan = close(T.man), kBad = close(T.nofiable);
+
+  // Barras y números
+  const kCount = tween(t, T.count + 0.1, 1.8, ease.outCubic);
+  const ks = [1, kDia, kMan, kBad];
+  const kKept = tween(t, T.nofiable + 2.2, 0.6, ease.inOutCubic);
+  levels.forEach((l, k) => {
+    reveal(l.g, t, l.t);
+    const n = k === 0 ? lerp(0, N0, kCount) : l.from - l.rows * ks[k];
+    const ink = k === levels.length - 1 ? mix(C.ink, KEPT, kKept) : C.ink;
+    attrs(l.bar, { width: (n * scale).toFixed(2), fill: ink });
+    attrs(l.num, { fill: ink });
+    l.num.textContent = num(Math.round(n));
+  });
+  reveal(legend, t, T.fixed);
+
+  // Filas y columnas: las que salen se cierran
+  const rowY = [];
+  let y = Y0;
+  for (let r = 0; r < NR; r++) {
+    rowY.push(y);
+    y += diaRows.has(r) ? P * (1 - kDia) : P;
+  }
+  const colX = [];
+  let x = X0;
+  for (let c = 0; c < NC; c++) {
+    colX.push(x);
+    x += manCols.has(c) ? P * (1 - kMan) : badCols.has(c) ? P * (1 - kBad) : P;
+  }
+
+  for (const cell of cells) {
+    const { e, r, c, cat } = cell;
+    const k = tween(t, cell.delay, 0.6, ease.outCubic);
+    let fill = C.cell, stroke = "none", sw = 0, rx = 2.5, scale = 0.4 + 0.6 * k, op = k;
+    if (cat === "dia") {
+      // En bruto parecen paradas de 22 h en toda la línea; se apagan y se quitan
+      fill = mix(C.own, C.cell, tween(t, T.dia + 0.3 + c * 0.004, 0.6, ease.inOutCubic));
+      op *= 1 - kDia;
+      scale *= 1 - 0.6 * kDia;
+    } else if (cat === "man") {
+      // Fuera del flujo principal: se vacían y se quitan
+      const p = tween(t, T.man + 0.3 + (c - man0) * 0.04 + r * 0.02, 0.6, ease.outCubic);
+      fill = mix(C.cell, "#ffffff", p);
+      stroke = MARK;
+      sw = 1.6 * p;
+      op *= 1 - kMan;
+      scale *= 1 - 0.6 * kMan;
+    } else if (cat === "nofiable") {
+      const d = T.nofiable + 0.3 + r * 0.03;
+      if (t >= d + 0.15) fill = "url(#hatch)";
+      scale *= (1 + 0.5 * Math.sin(Math.PI * prog(t, d, 0.5))) * (1 - 0.6 * kBad);
+      op *= 1 - kBad;
+    } else if (cat !== "ok") {
+      // Se quedan, corregidas: relleno oscuro = horas reescaladas, círculo = contador de la línea
+      const d = T.fixed + 0.25 + c * 0.012 + r * 0.008;
+      const p = tween(t, d, 0.5, ease.outCubic);
+      scale *= 1 + 0.6 * Math.sin(Math.PI * prog(t, d, 0.7));
+      if (cat === "reloj" || cat === "ambos") fill = mix(C.cell, MARK, p);
+      if (cat === "contador") {
+        fill = mix(C.cell, "#ffffff", p);
+        stroke = MARK;
+        sw = 1.6 * p;
+      }
+      if (cat !== "reloj") rx = lerp(2.5, S / 2, p);
+    }
+    const s = S * scale;
+    const cx = colX[c] + S / 2, cy = rowY[r] + S / 2;
+    attrs(e, {
+      x: (cx - s / 2).toFixed(2), y: (cy - s / 2).toFixed(2), width: s.toFixed(2), height: s.toFixed(2),
+      rx: ((rx * s) / S).toFixed(2), fill, stroke, "stroke-width": sw.toFixed(2), opacity: op.toFixed(3),
+    });
+  }
+}
+
+mount(render, D);
+</script>
+</body>
+</html>

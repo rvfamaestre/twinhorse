@@ -1,0 +1,128 @@
+% Fórmulas del método, una por página (PDF recortado, listo para pegar en una diapositiva).
+% Compilar: latexmk, desde esta carpeta (el PDF va a figures/slides). Sin el paquete inter, comentar su línea.
+\documentclass[border=18pt,multi=slide,varwidth=26cm]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[sfdefault]{inter}
+\usepackage{amsmath,amssymb}
+\usepackage{sansmath}
+\usepackage{xcolor}
+\definecolor{ink}{HTML}{111111}
+\definecolor{muted}{HTML}{8A8F98}
+\definecolor{own}{HTML}{E5484D}
+\definecolor{starved}{HTML}{F0A530}
+\definecolor{blocked}{HTML}{3E8BF0}
+\definecolor{ok}{HTML}{30A46C}
+\newcommand{\note}[1]{\par\vspace{10pt}{\color{muted}\small #1}}
+\newcommand{\TBF}{\mathrm{TBF}}
+\newcommand{\TAP}{{\color{own}\mathrm{TAP}}}
+\newcommand{\DES}{{\color{starved}\mathrm{DES}}}
+\newcommand{\SAT}{{\color{blocked}\mathrm{SAT}}}
+\newcommand{\NAP}{\mathrm{NAP}}
+\newcommand{\NPR}{\mathrm{NPR}}
+\begin{document}
+\sansmath\color{ink}
+
+% 1 · El día de una máquina ---------------------------------------------------------------
+\begin{slide}
+\[
+\underbrace{\TBF}_{\text{trabaja}} + \underbrace{\TAP}_{\text{parada propia}} + \underbrace{\DES}_{\text{sin piezas}} + \underbrace{\SAT}_{\text{bloqueada}} \;=\; 22\ \text{h}
+\]
+\note{Cada máquina reparte las 22 horas del día (24 h menos 2 h de pausas) en cuatro estados. Solo $\TAP$ es culpa suya.}
+\end{slide}
+
+% 2 · Indicadores del reto ---------------------------------------------------------------
+\begin{slide}
+\[
+D_p = \frac{\TBF}{\TBF + \TAP} \;\ge\; 90\,\%
+\qquad
+T_{cy} = \frac{6000 \cdot \TBF}{\NPR} \;\le\; 80\ \text{cmin}
+\qquad
+F_{pm} = 1000 \cdot \frac{\NAP}{\NPR}
+\qquad
+T_{AI} = \DES + \SAT
+\]
+\note{Disponibilidad, tiempo de ciclo, paradas cada mil piezas y parada inducida. $1\ \text{h} = 6000$ centésimas de minuto.}
+\end{slide}
+
+% 3 · Limpieza --------------------------------------------------------------------------
+\begin{slide}
+\[
+x' \;=\; x \cdot \frac{22}{\mathrm{TR}}
+\quad\text{si}\quad
+\mathrm{TR} = \TBF + \TAP + \DES + \SAT > 22\ \text{h},
+\qquad x \in \{\TBF, \TAP, \DES, \SAT\}
+\]
+\note{Las filas que registran más de 22 h se reescalan y se marcan. Ninguna regla borra datos: cada una deja un aviso.}
+\end{slide}
+
+% 4 · Tipo de parada de cada máquina y día ---------------------------------------------------
+\begin{slide}
+\[
+\text{tipo}(i,d) =
+\begin{cases}
+\text{dato no fiable} & \text{sin datos, fuera de servicio, } \NAP > \NPR \text{ o contador roto}\\[4pt]
+{\color{blocked}\text{bloqueada}} & \SAT = \max(\TAP, \DES, \SAT) \\[4pt]
+{\color{starved}\text{sin piezas}} & \DES = \max(\TAP, \DES, \SAT) \\[4pt]
+{\color{own}\text{microparada}} & \TAP \text{ domina y } \dfrac{3600\,\TAP}{\NAP} < 60\ \text{s} \\[8pt]
+{\color{own}\text{parada larga}} & \TAP \text{ domina y } \dfrac{3600\,\TAP}{\NAP} \ge 60\ \text{s} \\[8pt]
+{\color{ok}\text{normal}} & \TAP + \DES + \SAT < 1\ \text{h}
+\end{cases}
+\]
+\note{Reglas en orden de prioridad: la primera que se cumple decide. Sin modelo: misma entrada, misma salida.}
+\end{slide}
+
+% 5 · Regla de las flechas ---------------------------------------------------------------
+\begin{slide}
+\[
+\text{$i$ frena la línea el día $d$}
+\iff
+\SAT_{i-1,d} > \DES_{i,d}
+\;\;\wedge\;\;
+\DES_{i+1,d} > \SAT_{i,d}
+\]
+\note{Kuo, Lim y Meerkov (líneas en serie): si la anterior está más bloqueada que ella sin piezas, y la siguiente más sin piezas que ella bloqueada, el cuello de botella es $i$.}
+\end{slide}
+
+% 6 · Índice de penalización -------------------------------------------------------------
+\begin{slide}
+\[
+P_i \;=\; \underbrace{\sum_{d} \TAP_{i,d}}_{\text{lo que pierde ella}}
+\;+\; \underbrace{\sum_{d \in \mathcal{B}_i} \bigl(\SAT_{i-1,d} + \DES_{i+1,d}\bigr)}_{\text{lo que hace perder a sus vecinas}}
+\]
+\note{$\mathcal{B}_i$: días en que $i$ frena la línea. ST-0260: $P = 11 + 175 = 186$ h. ST-2390: $P = 68 + 0 = 68$ h.}
+\end{slide}
+
+% 7 · Reconstrucción del día (gemelo) ------------------------------------------------------
+\begin{slide}
+\[
+\begin{aligned}
+s_{i,n} &= \max\bigl(\, a_{i,n},\; e_{i,n-1} \,\bigr) && \text{empieza la pieza $n$}\\
+f_{i,n} &= s_{i,n} + c_i + \textstyle\sum_{k \in \mathcal{S}_{i,n}} \tau_{i,k} && \text{la termina (ciclo + paradas propias)}\\
+e_{i,n} &= \max\bigl(\, f_{i,n},\; s_{i+1,\, n - K_i} \,\bigr) && \text{la suelta cuando hay hueco delante}
+\end{aligned}
+\]
+\note{Recurrencia max-plus con pulmones finitos ($K_i$ palés). Las esperas ({\color{starved}sin piezas}, {\color{blocked}bloqueada}) no se programan: salen solas. El ritmo se ajusta para que el día simulado dé los motores reales.}
+\end{slide}
+
+% 8 · Predicción: cómo se mide -------------------------------------------------------------
+\begin{slide}
+\[
+\text{MAE} = \frac{1}{N}\sum_{t} \bigl|\hat y_t^{\,p50} - y_t\bigr|
+\qquad
+\text{mejora} = 1 - \frac{\text{MAE}_{\text{modelo}}}{\min\bigl(\text{MAE}_{\text{último}},\,\text{MAE}_{\text{media}}\bigr)}
+\qquad
+\text{cobertura} = \frac{1}{N}\sum_t \mathbf{1}\bigl[\hat y_t^{\,p10} \le y_t \le \hat y_t^{\,p90}\bigr]
+\]
+\note{Origen rodante, contexto de 4 a 10 días y horizonte de 1 a 5, sobre los mismos días objetivo. Cobertura ideal: 80 \%. TimesFM: 78 \%.}
+\end{slide}
+
+% 9 · Aviso por banda --------------------------------------------------------------------
+\begin{slide}
+\[
+\text{aviso}(i,d) \iff \TAP_{i,d} - \hat q^{\,90}_{i,d} \;\ge\; 0{,}3\ \text{h}
+\]
+\note{$\hat q^{\,90}$: percentil 90 de TimesFM a un día vista. Un día por encima de la banda es un día que no se esperaba.}
+\end{slide}
+
+\end{document}

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>01 · La paradoja</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg id="s" viewBox="0 0 1920 1080" width="1920" height="1080"><rect width="1920" height="1080" fill="#fff"/><g id="cam"></g></svg>
+<script type="module">
+// «Se para más» frente a «penaliza más a la línea»: el ranking se reordena al sumar lo que cada
+// máquina hace perder a sus vecinas. Mismos datos que figures/slides/01_paradoja.
+import { C, el, attrs, reveal, tween, ease, prog, lerp, num, drift, fonts, loadData, mount } from "./lib.js";
+
+const D = 14;
+const data = await loadData();
+await fonts();
+const cam = document.getElementById("cam");
+
+const NAME_X = 560, BAR_X = 600, Y0 = 284, ROW = 104, BAR_H = 34, BAR_MAX = 880;
+const T = { head: 0.3, rows: 0.6, out: 4.0, scale: 4.3, inRows: 4.9, ind: 6.1, sort: 8.2, emph: 9.8 };
+
+// Filas: la unión de los dos rankings, con su posición en cada fase
+const byOp = new Map();
+const add = (r) => byOp.has(r.op) || byOp.set(r.op, { ...r });
+data.own.forEach(add);
+data.penalty.forEach(add);
+const rows = [...byOp.values()];
+const mid = [...data.penalty].sort((a, b) => b.own - a.own).map((r) => r.op); // nuevas filas, aún por horas propias
+for (const r of rows) {
+  r.p1 = data.own.findIndex((x) => x.op === r.op);
+  r.p2 = mid.indexOf(r.op);
+  r.p3 = data.penalty.findIndex((x) => x.op === r.op);
+}
+const s1 = BAR_MAX / Math.max(...data.own.map((r) => r.own));
+const s2 = BAR_MAX / Math.max(...data.penalty.map((r) => r.index));
+const top = data.penalty[0].op;
+const naive = data.own[0].op;
+
+// Cabeceras
+const headA = el("g", {}, cam);
+el("text", { x: BAR_X, y: 190, class: "caps", text: "SE PARA MÁS" }, headA);
+const headB = el("g", {}, cam);
+el("text", { x: BAR_X, y: 190, class: "caps", text: "PENALIZA MÁS A LA LÍNEA" }, headB);
+
+for (const r of rows) {
+  r.g = el("g", {}, cam);
+  r.inner = el("g", {}, r.g);
+  r.name = el("text", { x: NAME_X, y: 12, "text-anchor": "end", "font-size": 34, "font-weight": 500, fill: C.ink2, class: "name", text: r.op }, r.inner);
+  r.own_ = el("rect", { x: BAR_X, y: -BAR_H / 2, height: BAR_H, rx: 3, fill: C.own }, r.inner);
+  r.prev_ = el("rect", { y: -BAR_H / 2, height: BAR_H, rx: 3, fill: C.blocked }, r.inner);
+  r.next_ = el("rect", { y: -BAR_H / 2, height: BAR_H, rx: 3, fill: C.starved }, r.inner);
+  r.val = el("text", { y: 12, "font-size": 34, "font-weight": 600, fill: C.ink }, r.inner);
+  r.note = el("text", { x: BAR_X, y: 54, class: "name", "font-size": 22, "font-weight": 500, fill: C.muted }, r.g);
+}
+byOp.get(top).note.textContent = `${num(byOp.get(top).own)} h propias · ${num(byOp.get(top).prev + byOp.get(top).next)} h que pierden sus vecinas`;
+byOp.get(naive).note.textContent = `${num(byOp.get(naive).own)} h propias · no frena a ninguna vecina`;
+
+// Leyenda
+const legend = el("g", {}, cam);
+const items = [
+  [C.own, "parada propia"],
+  [C.blocked, "bloquea a la anterior"],
+  [C.starved, "deja sin piezas a la siguiente"],
+];
+let lx = BAR_X;
+const legendItems = items.map(([color, label]) => {
+  const g = el("g", {}, legend);
+  el("circle", { cx: lx + 8, cy: 952, r: 8, fill: color }, g);
+  const tx = el("text", { x: lx + 26, y: 960, "font-size": 24, "font-weight": 500, fill: C.ink2, text: label }, g);
+  lx += 26 + tx.getComputedTextLength() + 48;
+  return g;
+});
+
+const rowY = (p) => Y0 + p * ROW;
+
+function render(t) {
+  drift(cam, t, D, 0.02);
+  reveal(headA, t, T.head, { out: T.out + 0.2, outDur: 0.4 });
+  reveal(headB, t, T.out + 0.6);
+  reveal(legendItems[0], t, T.rows + 0.4);
+  reveal(legendItems[1], t, T.ind);
+  reveal(legendItems[2], t, T.ind + 0.15);
+
+  const scale = lerp(s1, s2, tween(t, T.scale, 1.1, ease.inOutCubic));
+  const kSort = tween(t, T.sort, 1.4, ease.inOutCubic);
+  const kMove = tween(t, T.scale, 1.1, ease.inOutCubic);
+
+  for (const r of rows) {
+    // Posición vertical y visibilidad según la fase
+    let y, alpha = 1, grow = 1, dx = 0;
+    const inA = r.p1 >= 0, inB = r.p2 >= 0;
+    if (t < T.out || !inB) {
+      if (!inA) { r.g.style.opacity = 0; continue; }
+      y = rowY(r.p1);
+      const k = tween(t, T.rows + r.p1 * 0.12, 1.0);
+      alpha = k;
+      grow = tween(t, T.rows + 0.15 + r.p1 * 0.12, 1.3);
+      if (!inB) {
+        const o = tween(t, T.out + r.p1 * 0.05, 0.6, ease.inOutCubic);
+        alpha *= 1 - o;
+        dx = -40 * o;
+      }
+      r.inner.style.filter = alpha < 0.999 ? `blur(${((1 - alpha) * 6).toFixed(2)}px)` : "none";
+    } else {
+      const ya = inA ? lerp(rowY(r.p1), rowY(r.p2), kMove) : rowY(r.p2);
+      y = lerp(ya, rowY(r.p3), kSort);
+      if (!inA) {
+        const k = tween(t, T.inRows + r.p2 * 0.08, 0.9);
+        alpha = k;
+        grow = tween(t, T.inRows + 0.1 + r.p2 * 0.08, 1.1);
+        dx = 30 * (1 - k);
+        r.inner.style.filter = k < 0.999 ? `blur(${((1 - k) * 6).toFixed(2)}px)` : "none";
+      } else r.inner.style.filter = "none";
+    }
+    // Al final solo quedan en primer plano la que frena y la que más se para
+    const focus = r.op === top || r.op === naive;
+    const dim = tween(t, T.emph, 0.8, ease.inOutCubic);
+    if (!focus) alpha *= 1 - 0.72 * dim;
+    r.g.style.opacity = alpha.toFixed(4);
+    r.g.setAttribute("transform", `translate(${dx.toFixed(2)} ${y.toFixed(2)})`);
+    r.name.setAttribute("font-weight", focus && dim > 0.5 ? 700 : 500);
+    r.name.setAttribute("fill", focus && dim > 0.5 ? C.ink : C.ink2);
+
+    // Barra: propia, y luego lo inducido en las vecinas
+    const gi = inB ? tween(t, T.ind + r.p2 * 0.09, 1.5) : 0;
+    const wOwn = r.own * scale * grow;
+    const wPrev = r.prev * scale * gi;
+    const wNext = r.next * scale * gi;
+    attrs(r.own_, { width: Math.max(wOwn, 0).toFixed(2) });
+    let x = BAR_X + wOwn + (wPrev > 0.5 ? 3 : 0);
+    attrs(r.prev_, { x: x.toFixed(2), width: Math.max(wPrev, 0).toFixed(2) });
+    x += wPrev + (wNext > 0.5 ? 3 : 0);
+    attrs(r.next_, { x: x.toFixed(2), width: Math.max(wNext, 0).toFixed(2) });
+    x += wNext;
+    const v = r.own * grow + (r.prev + r.next) * gi;
+    attrs(r.val, { x: (x + 20).toFixed(2) });
+    r.val.textContent = `${num(v)} h`;
+
+    if (focus) reveal(r.note, t, T.emph + 0.3 + (r.op === naive ? 0.35 : 0), { dy: 10 });
+    else r.note.style.opacity = 0;
+  }
+}
+
+mount(render, D);
+</script>
+</body>
+</html>

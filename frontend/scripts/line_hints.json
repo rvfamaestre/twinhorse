@@ -1,0 +1,10 @@
+{
+  "VLL_MONTAJE_L5": {
+    "notas": "Hipótesis de dibujo, todas configurables. `kinds`: qué tipo de puesto es cada operación según su código (PM = puesto manual, ST = estación automática; nomenclatura habitual, pendiente de confirmar con planta). `topology`: fuerza lo que la inferencia de scripts/topology.py no deba decidir sola. Claves: branches [{ops, joins}], laterals {op: destino}, buffers [[a, b]], assists {op: estación}, disable [lateral | orden | subconjunto | pulmon].",
+    "kinds": [
+      { "pattern": "^PM", "kind": "manual" },
+      { "pattern": "^ST", "kind": "auto" }
+    ],
+    "topology": {}
+  }
+}

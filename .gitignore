@@ -1,0 +1,73 @@
+# Datos del reto: son de una línea real de planta y no se publican. Cada uno los tiene en local.
+data/raw/
+data/processed/
+
+# Salidas que llevan los datos fila a fila: se regeneran con los scripts (ver README)
+forecast/output/*/*.csv
+forecast/output/*/*.json
+frontend/public/mock/
+slides/video/scenes/data.json
+
+# Documentos del reto o de la organización (presentaciones, hojas, actas)
+*.pptx
+*.ppt
+*.xlsx
+*.xls
+*.docx
+*.doc
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.claude/settings.local.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+.worktrees/
+graphify-out/
+
+# LaTeX: ficheros intermedios, estén donde estén (slides/latex, docs/...)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.vrb
+*.xdv
+_minted*/
+slides/latex/build/
+docs/**/build/
+# El PDF bueno de slides/latex sale en figures/slides (latexmkrc); el de la carpeta es la vista previa
+slides/latex/*.pdf
